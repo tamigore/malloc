@@ -1,0 +1,19 @@
+# Compiled object files
+*.o
+
+# Executable files
+*.out
+*.exe
+
+# Debug files
+*.log
+*.tmp
+
+# Dependency files
+*.d
+
+# Build directories
+/objects/
+
+# Editor/IDE specific files
+.vscode/
