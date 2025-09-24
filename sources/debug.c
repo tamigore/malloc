@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/19 14:10:16 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/19 14:34:51 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/24 18:42:52 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -23,12 +23,19 @@ static int header_in_our_zones(t_block *b)
 {
     if (!b)
         return 0;
+    if (b->zone) {
+        char *zs = (char*)b->zone + b->zone->data_offset;
+        char *ze = zs + b->zone->capacity;
+        if ((char*)b >= zs && (char*)b + (ptrdiff_t)sizeof(t_block) <= ze)
+            return 1;
+    }
+    // fallback linear scan if zone pointer absent or invalid
     for (t_zone *z = g_zones; z; z = z->next)
     {
         char *zs = (char*)z + z->data_offset;
         char *ze = zs + z->capacity;
         if ((char*)b >= zs && (char*)b + (ptrdiff_t)sizeof(t_block) <= ze)
-            return 1;
+        { b->zone = z; return 1; }
     }
     return 0;
 }

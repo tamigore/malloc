@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/19 14:10:19 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 15:24:40 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/24 18:42:51 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,14 +26,17 @@ static t_block *g_bins[BIN_COUNT];
 
 static inline int block_in_any_zone(t_block *b)
 {
-    if (!b)
-        return 0;
-    for (t_zone *z = g_zones; z; z = z->next)
-    {
-        char *zs = (char*)z + z->data_offset;
-        char *ze = zs + z->capacity;
+    if (!b) return 0;
+    if (b->zone) {
+        char *zs = (char*)b->zone + b->zone->data_offset;
+        char *ze = zs + b->zone->capacity;
         if ((char*)b >= zs && (char*)b + (ptrdiff_t)sizeof(t_block) <= ze)
             return 1;
+    }
+    for (t_zone *z = g_zones; z; z = z->next) {
+        char *zs = (char*)z + z->data_offset;
+        char *ze = zs + z->capacity;
+        if ((char*)b >= zs && (char*)b + (ptrdiff_t)sizeof(t_block) <= ze) { b->zone = z; return 1; }
     }
     return 0;
 }
@@ -124,6 +127,10 @@ t_block *malloc_bin_take(size_t size)
 
 void malloc_bin_remove(t_block *b)
 { // explicit removal (e.g., before coalesce)
-    if (b && b->free)
+    if (!b)
+        return;
+    if (b->magic != 0xB10C0DEU || !block_in_any_zone(b))
+        return; // ignore foreign/corrupt
+    if (b->free)
         bin_detach(b);
 }

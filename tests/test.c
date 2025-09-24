@@ -6,12 +6,17 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/15 17:20:47 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 16:39:28 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/24 18:23:45 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 // Generic CUnit test runner. Internal allocator tests live in custom_tests.c
 // and are only compiled into the custom test binary (with -DCUSTOM_ALLOCATOR).
+#ifndef CUSTOM_ALLOCATOR
+#include "test.h"
+__attribute__((weak)) void add_custom_tests(CU_pSuite suite) { (void)suite; }
+__attribute__((weak)) void show(void) {}
+#endif
 #include "test.h"
 
 static void *worker(void *arg)

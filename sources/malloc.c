@@ -6,11 +6,15 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:08 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 15:26:32 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/24 18:42:51 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
+
+// forward (internal) bin ops
+void malloc_bin_insert(t_block *b);
+void malloc_bin_remove(t_block *b);
 
 t_zone *g_zones = NULL;
 
@@ -25,13 +29,17 @@ static t_zone_type classify(size_t size)
 
 static size_t pagesize(void)
 {
-	static size_t ps=0;
+    static size_t ps = 0;
+    if (ps == 0)
+    {
 #ifdef __APPLE__
 	ps = (size_t)getpagesize();
 #else
 	ps = (size_t)sysconf(_SC_PAGESIZE);
 #endif
-	return ps;
+	if (ps == 0) ps = 4096; // fallback
+    }
+    return ps;
 }
 
 static size_t zone_allocation_size(t_zone_type t, size_t request)
@@ -65,6 +73,7 @@ static t_zone *create_zone(t_zone_type t, size_t request)
 	z->used = 0;
 	z->next = NULL;
 	z->blocks = NULL;
+	z->tail = NULL;
 	// Insert at list head for simplicity (could keep type ordering later)
 	z->next = g_zones; g_zones = z;
 	return z;
@@ -73,6 +82,13 @@ static t_zone *create_zone(t_zone_type t, size_t request)
 static void *block_payload(t_block *b)
 {
 	return (void*)((char*)b + sizeof(t_block));
+}
+
+static inline int block_in_zone_local(t_zone *z, t_block *b)
+{
+    char *zs = (char*)z + z->data_offset;
+    char *ze = zs + z->capacity;
+    return ((char*)b >= zs && (char*)b + (ptrdiff_t)sizeof(t_block) <= ze);
 }
 
 static void split_block_if_large(t_zone *z, t_block *b, size_t needed)
@@ -95,39 +111,43 @@ static void split_block_if_large(t_zone *z, t_block *b, size_t needed)
 		nb->bin_next = nb->bin_prev = NULL;
 		if (b->next) b->next->prev = nb;
 		b->next = nb;
-		// Link into zone list if needed
+		if (!z)
+			z = b->zone; // use back-pointer if caller passed NULL
+		nb->zone = z;
+		if (z && z->tail == b)
+			z->tail = nb;
 		malloc_bin_insert(nb);
 	}
-	(void)z;
 }
 
 static t_block *append_block(t_zone *z, size_t size, size_t requested)
 {
-	// Walk to find end and leftover space
-	char *zone_start = (char*)z + z->data_offset;
-	// Compute used span by traversing blocks
-	t_block *last = NULL;
-	for (t_block *b = z->blocks; b; b = b->next)
-		last = b;
-	size_t used_bytes = 0;
-	if (z->blocks) // compute end of last block
-		used_bytes = ((char*)last + sizeof(t_block) + last->size) - zone_start;
-	size_t needed = sizeof(t_block) + size;
-	if (used_bytes + needed > z->capacity)
-		return NULL;
-	t_block *b = (t_block*)(zone_start + used_bytes);
-	b->magic = 0xB10C0DEU;
-	b->size = size;
-	b->requested = requested;
-	b->free = 0;
-	b->prev = last;
-	b->next = NULL;
-	if (!z->blocks)
-		z->blocks = b;
+    char *zone_start = (char*)z + z->data_offset;
+	char *zone_limit = zone_start + z->capacity;
+	char *insert;
+	if (!z->tail)
+		insert = zone_start;
 	else
-		last->next = b;
-	z->used += size;
-	return b;
+		insert = (char*)z->tail + sizeof(t_block) + z->tail->size;
+	if (insert + (ptrdiff_t)(sizeof(t_block) + size) > zone_limit)
+		return NULL;
+	t_block *b = (t_block*)insert;
+    b->magic = 0xB10C0DEU;
+    b->size = size;
+    b->requested = requested;
+	b->free = 0;
+    b->prev = z->tail;
+    b->next = NULL;
+    if (!z->blocks)
+        z->blocks = b;
+    if (z->tail)
+        z->tail->next = b;
+    z->tail = b;
+    z->used += size;
+	/* span removed */
+	b->bin_next = b->bin_prev = NULL;
+	b->zone = z;
+    return b;
 }
 
 static t_block *alloc_from_zone(t_zone *z, size_t size, size_t requested)
@@ -160,6 +180,7 @@ static t_block *allocate(size_t requested)
 		z->next = g_zones;
 		g_zones = z;
 		z->blocks = (t_block*)((char*)z + z->data_offset);
+		z->tail = z->blocks;
 		t_block *b = z->blocks;
 		b->magic = 0xB10C0DEU;
 		b->size = aligned;
@@ -167,6 +188,8 @@ static t_block *allocate(size_t requested)
 		b->free = 0;
 		b->prev = NULL;
 		b->next = NULL;
+		   b->bin_next = b->bin_prev = NULL;
+		   b->zone = z;
 		return b;
 	}
 	// Try bins first (only for non-large)
@@ -174,19 +197,10 @@ static t_block *allocate(size_t requested)
 	if (reuse) 
 	{
 		reuse->requested = requested;
-		// zone->used accounted: we add aligned size; it was previously free so used did not include it
-		// Need owner zone to increase used; find via linear zone search
-		for (t_zone *oz = g_zones; oz; oz = oz->next)
-		{
-			char *zs = (char*)oz + oz->data_offset;
-			char *ze = zs + oz->capacity;
-			if ((char*)reuse >= zs && (char*)reuse < ze)
-			{
-				oz->used += aligned;
-				break;
-			}
-		}
-		split_block_if_large(NULL, reuse, aligned);
+		// zone->used accounted using back-pointer; block came from a free bin
+		if (reuse->zone)
+			reuse->zone->used += aligned;
+		split_block_if_large(reuse->zone, reuse, aligned);
 		return reuse;
 	}
 	// find existing zone of that type with space (append path)

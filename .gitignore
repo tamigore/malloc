@@ -5,6 +5,10 @@
 *.out
 *.exe
 
+# Libraries
+*.so
+*.a
+
 # Debug files
 *.log
 *.tmp
