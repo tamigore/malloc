@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:08 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/26 11:36:14 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/26 11:58:35 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -41,7 +41,7 @@ static size_t pagesize(void)
     return ps;
 }
 
-// Decide dynamic thresholds as page-size multiples while keeping reasonable granularity.
+// Decide dynamic thresholds as page-size multiples.
 // Strategy:
 //  - Base tiny target = 128 (historical). Round up to next divisor of page size such that
 //    at least 64 tiny blocks fit into one multi-page zone allocation.
@@ -58,8 +58,9 @@ size_t malloc_tiny_max(void)
 	size_t ps = pagesize();
 	size_t base = 128UL;
 	// Ensure multiple of page size but not exceeding half a page to keep density high.
-	// If page size < base (unlikely), fallback to base aligned to 16.
-	if (ps <= base) {
+	// If page size < base fallback to base aligned to 16.
+	if (ps <= base)
+	{
 		g_tiny_max = ALIGN_UP(base, MALLOC_ALIGN);
 		return g_tiny_max;
 	}
@@ -102,7 +103,7 @@ static size_t zone_allocation_size(t_zone_type t, size_t request)
         size_t need = ALIGN_UP(sizeof(t_zone) + sizeof(t_block) + request, ps);
         return need;
     }
-    size_t max_block = (t==ZONE_TINY) ? TINY_MAX : SMALL_MAX;
+    size_t max_block = (t == ZONE_TINY) ? TINY_MAX : SMALL_MAX;
     size_t one = sizeof(t_block) + max_block;
     // Keep zone size a multiple of page size large enough for ~100 blocks
     size_t raw = one * 100 + sizeof(t_zone);
