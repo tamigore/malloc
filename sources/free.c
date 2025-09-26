@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:03 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 19:17:51 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/26 11:26:05 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -121,9 +121,6 @@ void free(void *ptr)
         if (!owner) { malloc_unlock(); return; }
         b->zone = owner; // repair if possible
     }
-	// Validate header magic to avoid treating foreign pointers as ours
-	if (b->magic != 0xB10C0DEU)
-	{   malloc_unlock(); return; }
 	if (b->free)
 	{   malloc_unlock(); return; } // double free guard (silent)
 	b->free = 1;

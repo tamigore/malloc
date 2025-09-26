@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/24 15:27:53 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 15:27:55 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/26 11:05:22 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,10 +26,9 @@ inline static t_block *ptr_to_block(void *ptr)
 	return (t_block*)((char*)ptr - sizeof(t_block));
 }
 
-// Public helper required by subject
+// Memory display function
 void show_alloc_mem();
 
-// Exported symbols (overrides with LD_PRELOAD)
 void free(void *ptr);
 void *malloc(size_t size);
 void *realloc(void *ptr, size_t size);

@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/24 15:27:45 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 15:27:45 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/26 11:26:05 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -22,6 +22,6 @@ _Static_assert(sizeof(t_block) % 16 == 0, "t_block header not 16-byte multiple")
 
 size_t malloc_debug_aligned_size(void *ptr);
 size_t malloc_debug_requested(void *ptr);
-int    malloc_debug_valid(void *ptr); // returns 1 if magic ok
+int    malloc_debug_valid(void *ptr); // structural validity (no canary)
 
 #endif

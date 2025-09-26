@@ -6,25 +6,23 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:08 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 19:17:51 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/26 11:36:14 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
 
-// forward (internal) bin ops
-void malloc_bin_insert(t_block *b);
-void malloc_bin_remove(t_block *b);
-
 t_zone *g_zones = NULL;
 
 static t_zone_type classify(size_t size)
 {
-	if (size <= TINY_MAX)
+    size_t tiny = TINY_MAX;
+    size_t small = SMALL_MAX;
+    if (size <= tiny)
 		return ZONE_TINY;
-	if (size <= SMALL_MAX)
+    if (size <= small)
 		return ZONE_SMALL;
-	return ZONE_LARGE;
+    return ZONE_LARGE;
 }
 
 static size_t pagesize(void)
@@ -33,28 +31,82 @@ static size_t pagesize(void)
     if (ps == 0)
     {
 #ifdef __APPLE__
-	ps = (size_t)getpagesize();
+		ps = (size_t)getpagesize();
 #else
-	ps = (size_t)sysconf(_SC_PAGESIZE);
+		ps = (size_t)sysconf(_SC_PAGESIZE);
 #endif
-	if (ps == 0) ps = 4096; // fallback
+		if (ps == 0)
+			ps = 4096; // fallback
     }
     return ps;
 }
 
+// Decide dynamic thresholds as page-size multiples while keeping reasonable granularity.
+// Strategy:
+//  - Base tiny target = 128 (historical). Round up to next divisor of page size such that
+//    at least 64 tiny blocks fit into one multi-page zone allocation.
+//  - Base small target = 4096 (historical). Ensure small_max >= 4 * tiny_max and is a
+//    multiple of page size.
+// We cache results after first computation.
+static size_t g_tiny_max = 0;
+static size_t g_small_max = 0;
+
+size_t malloc_tiny_max(void)
+{
+	if (g_tiny_max)
+		return g_tiny_max;
+	size_t ps = pagesize();
+	size_t base = 128UL;
+	// Ensure multiple of page size but not exceeding half a page to keep density high.
+	// If page size < base (unlikely), fallback to base aligned to 16.
+	if (ps <= base) {
+		g_tiny_max = ALIGN_UP(base, MALLOC_ALIGN);
+		return g_tiny_max;
+	}
+	// Choose a divisor of page size near base: try ps/ (ps/base rounded)
+	size_t blocks_per_page_target = ps / base; // e.g., 4096/128 = 32
+	if (blocks_per_page_target == 0)
+		blocks_per_page_target = 1;
+	size_t candidate = ps / blocks_per_page_target; // 4096/32 = 128
+	// Round candidate up to alignment
+	candidate = ALIGN_UP(candidate, MALLOC_ALIGN);
+	// Guarantee candidate divides page size (so N * candidate = page size)
+	while (ps % candidate != 0)
+		candidate += MALLOC_ALIGN;
+	g_tiny_max = candidate;
+	return g_tiny_max;
+}
+
+size_t malloc_small_max(void)
+{
+	if (g_small_max)
+		return g_small_max;
+	size_t ps = pagesize();
+	size_t tiny = malloc_tiny_max();
+	size_t base = 4096UL;
+	// Ensure small_max at least 4 * tiny and a multiple of page size.
+	size_t min_small = tiny * 4;
+	if (base < min_small)
+		base = min_small;
+	// Round base up to page size multiple.
+	size_t candidate = ALIGN_UP(base, ps);
+	g_small_max = candidate;
+	return g_small_max;
+}
+
 static size_t zone_allocation_size(t_zone_type t, size_t request)
 {
-	size_t ps = pagesize();
-	if (t == ZONE_LARGE)
-	{
-		size_t need = ALIGN_UP(sizeof(t_zone) + sizeof(t_block) + request, ps);
-		return need;
-	}
-	// Aim for >=100 blocks of max size for TINY/SMALL
-	size_t max_block = (t==ZONE_TINY) ? TINY_MAX : SMALL_MAX;
-	size_t one = sizeof(t_block) + max_block;
-	size_t target = one * 100 + sizeof(t_zone);
-	return ALIGN_UP(target, ps);
+    size_t ps = pagesize();
+    if (t == ZONE_LARGE)
+    {
+        size_t need = ALIGN_UP(sizeof(t_zone) + sizeof(t_block) + request, ps);
+        return need;
+    }
+    size_t max_block = (t==ZONE_TINY) ? TINY_MAX : SMALL_MAX;
+    size_t one = sizeof(t_block) + max_block;
+    // Keep zone size a multiple of page size large enough for ~100 blocks
+    size_t raw = one * 100 + sizeof(t_zone);
+    return ALIGN_UP(raw, ps);
 }
 
 static t_zone *create_zone(t_zone_type t, size_t request)
@@ -102,7 +154,6 @@ static void split_block_if_large(t_zone *z, t_block *b, size_t needed)
 		size_t old_size = b->size;
 		b->size = needed;
 		t_block *nb = (t_block*)(base + sizeof(t_block) + needed);
-		nb->magic = 0xB10C0DEU;
 		nb->size = old_size - needed - sizeof(t_block);
 		nb->requested = 0;
 		nb->free = 1;
@@ -132,7 +183,6 @@ static t_block *append_block(t_zone *z, size_t size, size_t requested)
 	if (insert + (ptrdiff_t)(sizeof(t_block) + size) > zone_limit)
 		return NULL;
 	t_block *b = (t_block*)insert;
-    b->magic = 0xB10C0DEU;
     b->size = size;
     b->requested = requested;
 	b->free = 0;
@@ -182,7 +232,6 @@ static t_block *allocate(size_t requested)
 		z->blocks = (t_block*)((char*)z + z->data_offset);
 		z->tail = z->blocks;
 		t_block *b = z->blocks;
-		b->magic = 0xB10C0DEU;
 		b->size = aligned;
 		b->requested = requested;
 		b->free = 0;
