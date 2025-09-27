@@ -22,6 +22,6 @@ _Static_assert(sizeof(t_block) % 16 == 0, "t_block header not 16-byte multiple")
 
 size_t malloc_debug_aligned_size(void *ptr);
 size_t malloc_debug_requested(void *ptr);
-int    malloc_debug_valid(void *ptr); // structural validity (no canary)
+int malloc_debug_valid(void *ptr); // structural validity (no canary)
 
 #endif

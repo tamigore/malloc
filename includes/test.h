@@ -17,27 +17,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include <CUnit/CUnit.h>
-#include <CUnit/Basic.h>
-#include <CUnit/Automated.h>
-#include <CUnit/Console.h>
 #include <pthread.h>
 
 #ifndef _POSIX_C_SOURCE
 # define _POSIX_C_SOURCE 200809L
 #endif
 
-// Forward declaration for custom tests
-void add_custom_tests(CU_pSuite suite);
+typedef void (*t_test_fn)(void);
+typedef struct s_test_case { const char *name; t_test_fn fn; } t_test_case;
+
+void test_register(const char *name, t_test_fn fn);
+int  test_run_all(void);
+void test_report(void);
+void add_custom_tests(void);
 void show();
 
-// Worker context for multithreaded stress test
-typedef struct s_worker_ctx
-{
-	unsigned tid;
-	unsigned iters;
-	size_t   max_size;
-	unsigned slots;
-} t_worker_ctx;
+typedef struct s_worker_ctx { unsigned tid; unsigned iters; size_t max_size; unsigned slots; } t_worker_ctx;
 
 #endif

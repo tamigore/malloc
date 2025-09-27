@@ -6,21 +6,21 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/18 14:08:43 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 18:42:52 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/27 13:57:21 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <sys/mman.h>
+#ifndef MAP_ANONYMOUS
+#ifdef MAP_ANON
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+#endif
 
-#define CLR_RESET "\033[0m"
-#define CLR_TINY  "\033[36m"  /* cyan */
-#define CLR_SMALL "\033[33m"  /* yellow */
-#define CLR_LARGE "\033[35m"  /* magenta */
-#define CLR_STAT  "\033[90m"  /* bright black */
-#define CLR_FREE  "\033[32m"  /* green */
-
+// ---------------- Snapshot Structures ----------------
 typedef struct s_range
 {
 	void *start;
@@ -28,10 +28,25 @@ typedef struct s_range
 	size_t size;
 } t_range;
 
+typedef struct s_type_snapshot
+{
+	const char *label;
+	t_zone_type type;
+	t_zone **zones; // zone pointer array (addresses at snapshot time)
+	size_t zone_count;
+	t_range *allocs; // allocated (in-use) block payload ranges
+	size_t alloc_count;
+	t_range *frees; // free block payload ranges
+	size_t free_count;
+	size_t used_sum;	 // sum of zone->used at snapshot
+	size_t capacity_sum; // sum of zone->capacity at snapshot
+} t_type_snapshot;
+
+// ---------------- Local helpers (no allocation after unlock) ----------------
 static int ptr_cmp(const void *a, const void *b)
 {
-	const t_zone *za = *(const t_zone* const*)a;
-	const t_zone *zb = *(const t_zone* const*)b;
+	const t_zone *za = *(const t_zone *const *)a;
+	const t_zone *zb = *(const t_zone *const *)b;
 	if (za < zb)
 		return -1;
 	if (za > zb)
@@ -41,8 +56,8 @@ static int ptr_cmp(const void *a, const void *b)
 
 static int range_cmp(const void *a, const void *b)
 {
-	const t_range *ra = (const t_range*)a;
-	const t_range *rb = (const t_range*)b;
+	const t_range *ra = (const t_range *)a;
+	const t_range *rb = (const t_range *)b;
 	if (ra->start < rb->start)
 		return -1;
 	if (ra->start > rb->start)
@@ -50,144 +65,157 @@ static int range_cmp(const void *a, const void *b)
 	return 0;
 }
 
-static void collect_and_print_type(t_zone_type type, const char *label, size_t *ptotal,
-	int show_stats, int show_free, int use_color)
+// mmap wrapper that never calls malloc (keeps us reentrancy-safe while holding lock)
+static void *snap_alloc(size_t bytes)
 {
-	// First pass: count zones of this type
-	size_t zone_count = 0;
-	for (t_zone *z = g_zones; z; z = z->next)
-		if (z->type == type)
-			zone_count++;
-	if (!zone_count)
+	if (!bytes)
+		return NULL;
+#ifdef MAP_ANONYMOUS
+	void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#else
+#ifdef MAP_ANON
+	void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+#else
+	void *p = mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0); // fallback
+#endif
+#endif
+	if (p == MAP_FAILED)
+		return NULL;
+	return p;
+}
+
+static void free_snapshot_arrays(t_type_snapshot *s)
+{
+	if (!s)
 		return;
-	t_zone **zones = (t_zone**)mmap(NULL, zone_count * sizeof(t_zone*),
-		PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-	if (zones == MAP_FAILED)
-		return; // fall back silently
-	size_t idx=0;
+	if (s->zones)
+		munmap(s->zones, s->zone_count * sizeof(t_zone *));
+	if (s->allocs)
+		munmap(s->allocs, s->alloc_count * sizeof(t_range));
+	if (s->frees)
+		munmap(s->frees, s->free_count * sizeof(t_range));
+	// zero fields (not strictly required)
+	*s = (t_type_snapshot){0};
+}
+
+// Collect snapshot for a given type while allocator lock is held.
+static void snapshot_type(t_type_snapshot *out, t_zone_type type, const char *label, int want_free)
+{
+	*out = (t_type_snapshot){.label = label, .type = type};
+	// Count zones
+	size_t zc = 0;
 	for (t_zone *z = g_zones; z; z = z->next)
 		if (z->type == type)
-			zones[idx++] = z;
-	// sort zones by address
-	if (zone_count > 1)
-		qsort(zones, zone_count, sizeof(t_zone*), ptr_cmp);
-	// Count allocated blocks and free blocks (free blocks only if show_free requested)
-	size_t block_count = 0;
-	size_t free_block_count = 0;
-	size_t used_sum = 0; // sum of zone->used for stats (should equal allocated bytes)
-	for (size_t i = 0; i < zone_count; ++i)
+			zc++;
+	if (!zc)
+		return; // leave empty snapshot
+	out->zones = (t_zone **)snap_alloc(zc * sizeof(t_zone *));
+	if (!out->zones)
+		return; // allocation failure => skip snapshot
+	// Fill zone pointer array
+	size_t zi = 0;
+	for (t_zone *z = g_zones; z; z = z->next)
+		if (z->type == type)
+			out->zones[zi++] = z;
+	out->zone_count = zc;
+	if (zc > 1)
+		qsort(out->zones, zc, sizeof(t_zone *), ptr_cmp);
+	// First pass: count blocks
+	size_t alloc_cnt = 0, free_cnt = 0;
+	size_t used_sum = 0, cap_sum = 0;
+	for (size_t i = 0; i < zc; ++i)
 	{
-		used_sum += zones[i]->used;
-		for (t_block *b = zones[i]->blocks; b; b = b->next)
+		used_sum += out->zones[i]->used;
+		cap_sum += out->zones[i]->capacity;
+		for (t_block *b = out->zones[i]->blocks; b; b = b->next)
 		{
 			if (!b->free)
-				block_count++;
-			else if (show_free)
-				free_block_count++;
+				alloc_cnt++;
+			else if (want_free)
+				free_cnt++;
 		}
 	}
-	t_range *ranges = NULL;
-	t_range *free_ranges = NULL;
-	if (block_count)
+	out->used_sum = used_sum;
+	out->capacity_sum = cap_sum;
+	if (alloc_cnt)
+		out->allocs = (t_range *)snap_alloc(alloc_cnt * sizeof(t_range));
+	if (want_free && free_cnt)
+		out->frees = (t_range *)snap_alloc(free_cnt * sizeof(t_range));
+	if ((alloc_cnt && !out->allocs) || (free_cnt && want_free && !out->frees))
+		return; // partial failure; treat as empty (arrays may be NULL)
+	// Second pass: populate ranges
+	size_t ai = 0, fi = 0;
+	for (size_t i = 0; i < zc; ++i)
 	{
-		ranges = (t_range*)mmap(NULL, block_count * sizeof(t_range),
-			PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-		if (ranges == MAP_FAILED)
-			ranges = NULL;
-	}
-	if (show_free && free_block_count)
-	{
-		free_ranges = (t_range*)mmap(NULL, free_block_count * sizeof(t_range),
-			PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-		if (free_ranges == MAP_FAILED)
-			free_ranges = NULL;
-	}
-	size_t r=0, fr=0;
-	for (size_t i=0;i<zone_count;++i)
-	{
-		for (t_block *b = zones[i]->blocks; b; b = b->next)
+		for (t_block *b = out->zones[i]->blocks; b; b = b->next)
 		{
-			void *start = (char*)b + sizeof(t_block);
-			if (!b->free && ranges)
+			void *start = (char *)b + sizeof(t_block);
+			if (!b->free && out->allocs)
 			{
-				ranges[r].start = start;
-				ranges[r].end = (char*)start + b->size;
-				ranges[r].size = b->size;
-				r++;
-			} else if (b->free && free_ranges)
+				out->allocs[ai].start = start;
+				out->allocs[ai].end = (char *)start + b->size;
+				out->allocs[ai].size = b->size;
+				ai++;
+			}
+			else if (want_free && b->free && out->frees)
 			{
-				free_ranges[fr].start = start;
-				free_ranges[fr].end = (char*)start + b->size;
-				free_ranges[fr].size = b->size;
-				fr++;
+				out->frees[fi].start = start;
+				out->frees[fi].end = (char *)start + b->size;
+				out->frees[fi].size = b->size;
+				fi++;
 			}
 		}
 	}
-	if (ranges && block_count > 1)
-		qsort(ranges, block_count, sizeof(t_range), range_cmp);
-	if (free_ranges && free_block_count > 1)
-		qsort(free_ranges, free_block_count, sizeof(t_range), range_cmp);
-	// Print header using first zone address
-	const char *c = "";
-	if (use_color)
-	{
-		if (type == ZONE_TINY)
-			c = CLR_TINY;
-		else if (type == ZONE_SMALL)
-			c = CLR_SMALL;
-		else
-			c = CLR_LARGE;
-	}
-	if (use_color)
-		printf("%s%s : %p%s\n", c, label, (void*)zones[0], CLR_RESET);
-	else
-		printf("%s : %p\n", label, (void*)zones[0]);
+	out->alloc_count = alloc_cnt;
+	out->free_count = free_cnt;
+	if (out->allocs && alloc_cnt > 1)
+		qsort(out->allocs, alloc_cnt, sizeof(t_range), range_cmp);
+	if (out->frees && free_cnt > 1)
+		qsort(out->frees, free_cnt, sizeof(t_range), range_cmp);
+}
+
+// Print a snapshot (no allocator lock held) WITHOUT colors.
+static void print_snapshot(const t_type_snapshot *s, int show_stats, int show_free, size_t *ptotal)
+{
+	if (!s || !s->zone_count)
+		return;
+	printf("%s : %p\n", s->label, (void *)s->zones[0]);
 	if (show_stats)
 	{
-		size_t cap_sum = 0;
-		for (size_t i = 0; i < zone_count; ++i)
-			cap_sum += zones[i]->capacity;
-		size_t free_bytes = (cap_sum >= used_sum) ? (cap_sum - used_sum) : 0;
-		if (use_color)
-			printf("%s# stats: zones=%zu used=%zu capacity=%zu free=%zu%s\n", CLR_STAT, zone_count, used_sum, cap_sum, free_bytes, CLR_RESET);
-		else
-			printf("# stats: zones=%zu used=%zu capacity=%zu free=%zu\n", zone_count, used_sum, cap_sum, free_bytes);
+		size_t free_bytes = (s->capacity_sum >= s->used_sum) ? (s->capacity_sum - s->used_sum) : 0;
+		printf("# stats: zones=%zu used=%zu capacity=%zu free=%zu\n", s->zone_count, s->used_sum, s->capacity_sum, free_bytes);
 	}
-	for (size_t i=0;i<block_count && ranges; ++i)
+	for (size_t i = 0; i < s->alloc_count && s->allocs; ++i)
 	{
-		printf("%p - %p : %zu bytes\n", ranges[i].start, ranges[i].end, ranges[i].size);
-		*ptotal += ranges[i].size;
+		printf("%p - %p : %zu bytes\n", s->allocs[i].start, s->allocs[i].end, s->allocs[i].size);
+		*ptotal += s->allocs[i].size;
 	}
-	if (show_free && free_ranges)
+	if (show_free && s->frees)
 	{
-		for (size_t i=0;i<free_block_count; ++i)
-		{
-			if (use_color)
-				printf("%sFREE %p - %p : %zu bytes%s\n", CLR_FREE, free_ranges[i].start, free_ranges[i].end, free_ranges[i].size, CLR_RESET);
-			else
-				printf("FREE %p - %p : %zu bytes\n", free_ranges[i].start, free_ranges[i].end, free_ranges[i].size);
-		}
+		for (size_t i = 0; i < s->free_count; ++i)
+			printf("FREE %p - %p : %zu bytes\n", s->frees[i].start, s->frees[i].end, s->frees[i].size);
 	}
-	if (free_ranges)
-		munmap(free_ranges, free_block_count * sizeof(t_range));
-	if (ranges)
-		munmap(ranges, block_count * sizeof(t_range));
-	munmap(zones, zone_count * sizeof(t_zone*));
 }
 
 void show_alloc_mem()
 {
-	malloc_lock();
-	size_t total = 0;
 	int show_stats = (getenv("MALLOC_SHOW_STATS") != NULL);
-	int show_free  = (getenv("MALLOC_SHOW_FREE")  != NULL);
-	int use_color  = (getenv("MALLOC_COLOR")      != NULL);
-	collect_and_print_type(ZONE_TINY,  "TINY",  &total, show_stats, show_free, use_color);
-	collect_and_print_type(ZONE_SMALL, "SMALL", &total, show_stats, show_free, use_color);
-	collect_and_print_type(ZONE_LARGE, "LARGE", &total, show_stats, show_free, use_color);
-	if (use_color)
-		printf("%sTotal : %zu bytes%s\n", CLR_STAT, total, CLR_RESET);
-	else
-		printf("Total : %zu bytes\n", total);
+	int show_free = (getenv("MALLOC_SHOW_FREE") != NULL);
+
+	malloc_lock();
+	t_type_snapshot snaps[3];
+	snapshot_type(&snaps[0], ZONE_TINY, "TINY", show_free);
+	snapshot_type(&snaps[1], ZONE_SMALL, "SMALL", show_free);
+	snapshot_type(&snaps[2], ZONE_LARGE, "LARGE", show_free);
 	malloc_unlock();
+
+	size_t total = 0;
+	print_snapshot(&snaps[0], show_stats, show_free, &total);
+	print_snapshot(&snaps[1], show_stats, show_free, &total);
+	print_snapshot(&snaps[2], show_stats, show_free, &total);
+	printf("Total : %zu bytes\n", total);
+
+	free_snapshot_arrays(&snaps[0]);
+	free_snapshot_arrays(&snaps[1]);
+	free_snapshot_arrays(&snaps[2]);
 }

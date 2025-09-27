@@ -12,10 +12,10 @@
 
 #include "ft_malloc.h"
 
-static void	*ft_memcpy(void *dst, const void *src, size_t n)
+static void *ft_memcpy(void *dst, const void *src, size_t n)
 {
-	unsigned char	*uc_dst = (unsigned char *)dst;
-	unsigned char	*uc_src = (unsigned char *)src;
+	unsigned char *uc_dst = (unsigned char *)dst;
+	unsigned char *uc_src = (unsigned char *)src;
 
 	if (!dst && !src)
 		return (NULL);
@@ -30,7 +30,10 @@ void *realloc(void *ptr, size_t size)
 {
 	malloc_lock();
 	if (!ptr)
-	{   malloc_unlock(); return malloc(size); }
+	{
+		malloc_unlock();
+		return malloc(size);
+	}
 	if (size == 0)
 	{
 		free(ptr);
@@ -47,7 +50,10 @@ void *realloc(void *ptr, size_t size)
 	// Allocate new block and copy
 	void *n = malloc(size);
 	if (!n)
-	{   malloc_unlock(); return NULL; }
+	{
+		malloc_unlock();
+		return NULL;
+	}
 	size_t copy = b->size < size ? b->size : size;
 	ft_memcpy(n, ptr, copy);
 	free(ptr);

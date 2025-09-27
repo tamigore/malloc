@@ -59,7 +59,6 @@ ERROR_FLAGS			= $(BASE_WARN) $(DEBUG_FLAGS)
 DEPENDENCY_FLAGS	= -MMD -MP
 THREADS_FLAGS		= -lpthread
 MALLOC_FLAGS		= -Wl,-rpath,. -L. -lft_malloc
-TEST_FLAGS			= -lcunit
 CUSTOM_DEFINE		= -DCUSTOM_ALLOCATOR
 
 # Build mode selection (default: debug)
@@ -155,11 +154,11 @@ $(CUSTOM_TEST_OBJ): $(CUSTOM_TEST_SRC)
 
 $(TEST): $(TEST_MAIN_OBJ)
 	@ echo "\t$(_CYAN)[Link] baseline test$(_NC)"
-	@ $(CC) -o $@ $^ $(CFLAGS) $(THREADS_FLAGS) -lcunit
+	@ $(CC) -o $@ $^ $(CFLAGS) $(THREADS_FLAGS)
 
 $(TEST_CUSTOM): $(SYMLINK) $(TEST_MAIN_OBJ) $(CUSTOM_TEST_OBJ)
 	@ echo "\t$(_CYAN)[Link] custom test$(_NC)"
-	@ $(CC) -o $@ $(TEST_MAIN_OBJ) $(CUSTOM_TEST_OBJ) $(CFLAGS) $(MALLOC_FLAGS) $(THREADS_FLAGS) -lcunit
+	@ $(CC) -o $@ $(TEST_MAIN_OBJ) $(CUSTOM_TEST_OBJ) $(CFLAGS) $(MALLOC_FLAGS) $(THREADS_FLAGS)
 
 test: $(TEST) $(TEST_CUSTOM)
 

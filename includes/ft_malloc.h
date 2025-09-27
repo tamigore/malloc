@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/24 15:27:53 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/26 11:05:22 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/27 13:16:07 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,6 +16,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#ifndef MAP_ANONYMOUS
+# ifdef MAP_ANON
+#  define MAP_ANONYMOUS MAP_ANON
+# endif
+#endif
+
 #include "malloc_blocks.h"
 #include "malloc_debug.h"
 #include "malloc_bin.h"
@@ -23,7 +29,7 @@
 
 inline static t_block *ptr_to_block(void *ptr)
 {
-	return (t_block*)((char*)ptr - sizeof(t_block));
+	return (t_block *)((char *)ptr - sizeof(t_block));
 }
 
 // Memory display function
