@@ -11,6 +11,8 @@
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
+#include "print.h"
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <sys/mman.h>
@@ -43,26 +45,35 @@ typedef struct s_type_snapshot
 } t_type_snapshot;
 
 // ---------------- Local helpers (no allocation after unlock) ----------------
-static int ptr_cmp(const void *a, const void *b)
+
+static void insertion_sort_ptrs(t_zone **arr, size_t n)
 {
-	const t_zone *za = *(const t_zone *const *)a;
-	const t_zone *zb = *(const t_zone *const *)b;
-	if (za < zb)
-		return -1;
-	if (za > zb)
-		return 1;
-	return 0;
+	for (size_t i = 1; i < n; ++i)
+	{
+		t_zone *key = arr[i];
+		size_t j = i;
+		while (j > 0 && arr[j - 1] > key)
+		{
+			arr[j] = arr[j - 1];
+			--j;
+		}
+		arr[j] = key;
+	}
 }
 
-static int range_cmp(const void *a, const void *b)
+static void insertion_sort_ranges(t_range *arr, size_t n)
 {
-	const t_range *ra = (const t_range *)a;
-	const t_range *rb = (const t_range *)b;
-	if (ra->start < rb->start)
-		return -1;
-	if (ra->start > rb->start)
-		return 1;
-	return 0;
+	for (size_t i = 1; i < n; ++i)
+	{
+		t_range key = arr[i];
+		size_t j = i;
+		while (j > 0 && arr[j - 1].start > key.start)
+		{
+			arr[j] = arr[j - 1];
+			--j;
+		}
+		arr[j] = key;
+	}
 }
 
 // mmap wrapper that never calls malloc (keeps us reentrancy-safe while holding lock)
@@ -119,7 +130,7 @@ static void snapshot_type(t_type_snapshot *out, t_zone_type type, const char *la
 			out->zones[zi++] = z;
 	out->zone_count = zc;
 	if (zc > 1)
-		qsort(out->zones, zc, sizeof(t_zone *), ptr_cmp);
+		insertion_sort_ptrs(out->zones, zc);
 	// First pass: count blocks
 	size_t alloc_cnt = 0, free_cnt = 0;
 	size_t used_sum = 0, cap_sum = 0;
@@ -169,9 +180,16 @@ static void snapshot_type(t_type_snapshot *out, t_zone_type type, const char *la
 	out->alloc_count = alloc_cnt;
 	out->free_count = free_cnt;
 	if (out->allocs && alloc_cnt > 1)
-		qsort(out->allocs, alloc_cnt, sizeof(t_range), range_cmp);
+		insertion_sort_ranges(out->allocs, alloc_cnt);
 	if (out->frees && free_cnt > 1)
-		qsort(out->frees, free_cnt, sizeof(t_range), range_cmp);
+		insertion_sort_ranges(out->frees, free_cnt);
+}
+
+void ft_print(const char *s)
+{
+	if (s)
+		while (*s)
+			write(1, s++, 1);
 }
 
 // Print a snapshot (no allocator lock held) WITHOUT colors.
@@ -179,21 +197,21 @@ static void print_snapshot(const t_type_snapshot *s, int show_stats, int show_fr
 {
 	if (!s || !s->zone_count)
 		return;
-	printf("%s : %p\n", s->label, (void *)s->zones[0]);
+	print("%s : %p\n", s->label, (void *)s->zones[0]);
 	if (show_stats)
 	{
 		size_t free_bytes = (s->capacity_sum >= s->used_sum) ? (s->capacity_sum - s->used_sum) : 0;
-		printf("# stats: zones=%zu used=%zu capacity=%zu free=%zu\n", s->zone_count, s->used_sum, s->capacity_sum, free_bytes);
+		print("# stats: zones=%u used=%u capacity=%u free=%u\n", s->zone_count, s->used_sum, s->capacity_sum, free_bytes);
 	}
 	for (size_t i = 0; i < s->alloc_count && s->allocs; ++i)
 	{
-		printf("%p - %p : %zu bytes\n", s->allocs[i].start, s->allocs[i].end, s->allocs[i].size);
+		print("%p - %p : %u bytes\n", s->allocs[i].start, s->allocs[i].end, s->allocs[i].size);
 		*ptotal += s->allocs[i].size;
 	}
 	if (show_free && s->frees)
 	{
 		for (size_t i = 0; i < s->free_count; ++i)
-			printf("FREE %p - %p : %zu bytes\n", s->frees[i].start, s->frees[i].end, s->frees[i].size);
+			print("FREE %p - %p : %u bytes\n", s->frees[i].start, s->frees[i].end, s->frees[i].size);
 	}
 }
 

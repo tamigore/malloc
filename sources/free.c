@@ -26,7 +26,7 @@ static int malloc_env_verify(void)
 	return val;
 }
 
-static int zone_verify_chain(t_zone *z, int verbose)
+static int zone_verify_chain(t_zone *z)
 {
 	char *zone_start = (char *)z + z->data_offset;
 	char *zone_end = zone_start + z->capacity;
@@ -34,30 +34,14 @@ static int zone_verify_chain(t_zone *z, int verbose)
 	for (t_block *b = z->blocks; b; prev = b, b = b->next)
 	{
 		if (b->prev != prev)
-		{
-			if (verbose)
-				fprintf(stderr, "[verify] prev mismatch %p (expected %p got %p)\n", (void *)b, (void *)prev, (void *)b->prev);
 			return 0;
-		}
 		if ((char *)b < zone_start || (char *)b + (ptrdiff_t)sizeof(t_block) > zone_end)
-		{
-			if (verbose)
-				fprintf(stderr, "[verify] header OOB %p\n", (void *)b);
 			return 0;
-		}
 		char *payload_end = (char *)b + sizeof(t_block) + b->size;
 		if (payload_end > zone_end)
-		{
-			if (verbose)
-				fprintf(stderr, "[verify] payload OOB %p\n", (void *)b);
 			return 0;
-		}
 		if (b->next && (char *)b->next <= (char *)b)
-		{
-			if (verbose)
-				fprintf(stderr, "[verify] non-monotonic %p -> %p\n", (void *)b, (void *)b->next);
 			return 0;
-		}
 	}
 	return 1;
 }
@@ -73,27 +57,18 @@ static void zone_recompute_layout(t_zone *z)
 	for (t_block *b = z->blocks; b; b = b->next)
 	{
 		if (++safety > 100000)
-		{
-			fprintf(stderr, "[verify] abort: excessive blocks (loop?)\n");
 			break;
-		}
 		if ((char *)b < zone_start || (char *)b >= zone_end)
-		{
-			fprintf(stderr, "[verify] abort: block outside zone during recompute %p\n", (void *)b);
 			break;
-		}
 		if (b->next && (char *)b->next <= (char *)b)
-		{
-			fprintf(stderr, "[verify] abort: non-monotonic next %p -> %p\n", (void *)b, (void *)b->next);
 			break;
-		}
 		last = b;
 	}
 	z->tail = last;
 	(void)zone_start;
 	(void)zone_end; /* span removed */
 	if (malloc_env_verify())
-		zone_verify_chain(z, 1);
+		zone_verify_chain(z);
 }
 
 static int block_in_zone(t_zone *z, t_block *b)

@@ -44,19 +44,23 @@ static void bins_init(void)
 	size_t small_max = SMALL_MAX; // runtime value
 	size_t count = (small_max / BIN_GRANULARITY) + 1;
 	size_t bytes = count * sizeof(t_block *);
-	t_block **arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	t_block **arr = NULL;
+#ifdef MAP_ANONYMOUS
+	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+#else
+#ifdef MAP_ANON
+	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+#else
+	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
+#endif
+#endif
 	if (arr == MAP_FAILED)
-		arr = NULL;
-	if (!arr)
 	{
-		arr = (t_block **)calloc(count, sizeof(t_block *));
-		if (!arr)
-		{
-			g_zones->bin_count = 0;
-			return; // disable bins
-		}
+		g_zones->bins = NULL;
+		g_zones->bin_count = 0; // disable bins on failure
+		return;
 	}
-	// mmap / calloc both zero initialised. Store metadata.
+	// mmap zero-initialized; store metadata.
 	g_zones->bins = arr;
 	g_zones->bin_count = count;
 }
