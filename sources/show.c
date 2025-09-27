@@ -6,15 +6,13 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/18 14:08:43 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/27 13:57:21 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/27 15:42:40 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
 #include "print.h"
 
-#include <stdlib.h>
-#include <stdio.h>
 #include <sys/mman.h>
 #ifndef MAP_ANONYMOUS
 #ifdef MAP_ANON
@@ -217,8 +215,9 @@ static void print_snapshot(const t_type_snapshot *s, int show_stats, int show_fr
 
 void show_alloc_mem()
 {
-	int show_stats = (getenv("MALLOC_SHOW_STATS") != NULL);
-	int show_free = (getenv("MALLOC_SHOW_FREE") != NULL);
+	// Environment variables removed; always minimal mandatory output
+	int show_stats = 0;
+	int show_free = 0;
 
 	malloc_lock();
 	t_type_snapshot snaps[3];
@@ -231,7 +230,7 @@ void show_alloc_mem()
 	print_snapshot(&snaps[0], show_stats, show_free, &total);
 	print_snapshot(&snaps[1], show_stats, show_free, &total);
 	print_snapshot(&snaps[2], show_stats, show_free, &total);
-	printf("Total : %zu bytes\n", total);
+	print("Total : %u bytes\n", total);
 
 	free_snapshot_arrays(&snaps[0]);
 	free_snapshot_arrays(&snaps[1]);

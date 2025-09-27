@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/24 15:52:57 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/24 19:17:51 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/27 15:39:32 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -14,7 +14,6 @@
 
 #ifdef CUSTOM_ALLOCATOR
 #include "ft_malloc.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h> // for memset

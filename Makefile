@@ -6,7 +6,7 @@
 #    By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2025/09/15 17:20:40 by tamigore          #+#    #+#              #
-#    Updated: 2025/09/24 19:17:51 by tamigore         ###   ########.fr        #
+#    Updated: 2025/09/27 15:42:07 by tamigore         ###   ########.fr        #
 #                                                                              #
 # **************************************************************************** #
 
@@ -192,12 +192,6 @@ $(MICRO_BENCH_CUSTOM): $(SYMLINK) $(OBJS_DIR)/bench_micro.o
 
 micro: $(MICRO_BENCH) $(MICRO_BENCH_CUSTOM)
 
-# NOTE:
-# Previous implementation used phony targets `all` and `bench` as prerequisites.
-# Because they are phony, `make perf` always triggered relinking of benchmarks
-# even when nothing changed. Now we depend directly on the actual file targets
-# (shared library symlink + the two benchmark binaries) so a repeated
-# `make perf` becomes a pure execution step with no needless relink.
 perf: $(SYMLINK) $(BENCH) $(BENCH_CUSTOM)
 	@ echo "$(_CYAN)[Performance comparaison]$(_NC)"
 	@ echo "$(_YELLOW)Baseline (libc) run:$(_NC)"

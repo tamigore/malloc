@@ -6,24 +6,18 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:03 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/26 11:26:05 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/27 15:41:29 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "ft_malloc.h"
-#include <stdio.h>
 #include <stdlib.h>
 
+// Environment variable access removed for compliance; always disabled unless
+// switched later to a compile-time flag.
 static int malloc_env_verify(void)
 {
-	static int init = 0;
-	static int val = 0;
-	if (!init)
-	{
-		init = 1;
-		val = (getenv("MALLOC_DEBUG_VERIFY") != NULL);
-	}
-	return val;
+	return 0; // previously checked getenv("MALLOC_DEBUG_VERIFY")
 }
 
 static int zone_verify_chain(t_zone *z)
