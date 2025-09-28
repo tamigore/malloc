@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:08 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/27 14:07:42 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/28 15:12:02 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -16,6 +16,8 @@
 #  define MAP_ANONYMOUS MAP_ANON
 # endif
 #endif
+
+#include "print.h"
 
 t_zone *g_zones = NULL;
 
@@ -55,19 +57,18 @@ static size_t pagesize(void)
 // We cache results after first computation.
 size_t malloc_tiny_max(void)
 {
-	static size_t cached = 0; // function-local cache (non-global at file scope)
+	static size_t cached = 0; // function-local cache
 	if (cached)
 		return cached;
 	size_t ps = pagesize();
 	size_t base = 128UL;
-	// Ensure multiple of page size but not exceeding half a page to keep density high.
 	// If page size < base fallback to base aligned to 16.
 	if (ps <= base)
 	{
 		cached = ALIGN_UP(base, MALLOC_ALIGN);
 		return cached;
 	}
-	// Choose a divisor of page size near base: try ps/ (ps/base rounded)
+	// Choose a divisor of page size near base
 	size_t blocks_per_page_target = ps / base; // e.g., 4096/128 = 32
 	if (blocks_per_page_target == 0)
 		blocks_per_page_target = 1;
@@ -114,6 +115,15 @@ static size_t zone_allocation_size(t_zone_type t, size_t request)
 	return ALIGN_UP(raw, ps);
 }
 
+char *zone_type_to_string(t_zone_type t)
+{
+	if (t == ZONE_TINY)
+		return "TINY";
+	if (t == ZONE_SMALL)
+		return "SMALL";
+	return "LARGE";
+}
+
 static t_zone *create_zone(t_zone_type t, size_t request)
 {
 	size_t alloc = zone_allocation_size(t, request);
@@ -131,9 +141,9 @@ static t_zone *create_zone(t_zone_type t, size_t request)
 	z->next = NULL;
 	z->blocks = NULL;
 	z->tail = NULL;
-	z->bins = NULL;      // init bin metadata
+	z->bins = NULL;
 	z->bin_count = 0;
-	// Insert at list head for simplicity (could keep type ordering later)
+	// Insert at list head
 	z->next = g_zones;
 	g_zones = z;
 	return z;
@@ -153,7 +163,6 @@ static inline int block_in_zone_local(t_zone *z, t_block *b)
 
 static void split_block_if_large(t_zone *z, t_block *b, size_t needed)
 {
-	// needed is aligned payload size. If block->size is significantly larger, split.
 	size_t excess = b->size - needed;
 	size_t min_split = sizeof(t_block) + MALLOC_ALIGN; // reserve room for header + minimal payload
 	if (excess >= min_split)
@@ -204,7 +213,6 @@ static t_block *append_block(t_zone *z, size_t size, size_t requested)
 		z->tail->next = b;
 	z->tail = b;
 	z->used += size;
-	/* span removed */
 	b->bin_next = b->bin_prev = NULL;
 	b->zone = z;
 	return b;
@@ -212,7 +220,6 @@ static t_block *append_block(t_zone *z, size_t size, size_t requested)
 
 static t_block *alloc_from_zone(t_zone *z, size_t size, size_t requested)
 {
-	// Fallback: append new block at zone end (bins searched globally before calling this)
 	t_block *b = append_block(z, size, requested);
 	return b;
 }
@@ -254,7 +261,6 @@ static t_block *allocate(size_t requested)
 		return b;
 	}
 	// Try bins first (only for non-large)
-	// was: t_block *reuse = malloc_bin_take(aligned);
 	t_block *reuse = malloc_bin_take(aligned, t);
 	if (reuse)
 	{
@@ -306,8 +312,6 @@ void *malloc(size_t size)
 	}
 	void *p = block_payload(b);
 	// Alignment should already be guaranteed by header alignment + size alignment.
-	// If this assert pattern triggers in future debugging, revisit header struct.
-	// (No pointer shifting here to keep ptr_to_block subtraction valid.)
 	malloc_unlock();
 	return p;
 }

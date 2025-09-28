@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/19 14:10:19 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/27 13:02:41 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/28 15:05:38 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,18 +20,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-// Simple segregated free lists for sizes up to SMALL_MAX.
-// Bin size class granularity = MALLOC_ALIGN (16).
-// Index formula: (size / MALLOC_ALIGN) - 1 capped.
-
-#ifndef BIN_GRANULARITY
-#define BIN_GRANULARITY MALLOC_ALIGN
-#endif
-
-// We eliminate separate global variables for bins by attaching bin metadata
-// (array pointer + count) to the first allocated zone (g_zones head). The
-// helper accessors below fetch or lazily initialize these fields.
-
 static inline t_block ***bins_array_ref(void) { return g_zones ? &g_zones->bins : NULL; }
 static inline size_t *bins_count_ref(void) { return g_zones ? &g_zones->bin_count : NULL; }
 
@@ -42,17 +30,17 @@ static void bins_init(void)
 	if (g_zones->bins)
 		return;
 	size_t small_max = SMALL_MAX; // runtime value
-	size_t count = (small_max / BIN_GRANULARITY) + 1;
+	size_t count = (small_max / MALLOC_ALIGN) + 1;
 	size_t bytes = count * sizeof(t_block *);
 	t_block **arr = NULL;
 #ifdef MAP_ANONYMOUS
 	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 #else
-#ifdef MAP_ANON
+	#ifdef MAP_ANON
 	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-#else
+	#else
 	arr = (t_block **)mmap(NULL, bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE, -1, 0);
-#endif
+	#endif
 #endif
 	if (arr == MAP_FAILED)
 	{
@@ -100,10 +88,10 @@ static inline size_t clamp_index(size_t idx)
 
 static inline size_t bin_index(size_t size)
 {
-	size_t aligned = ALIGN_UP(size, BIN_GRANULARITY);
-	size_t idx = (aligned / BIN_GRANULARITY);
+	size_t aligned = ALIGN_UP(size, MALLOC_ALIGN);
+	size_t idx = (aligned / MALLOC_ALIGN);
 	if (idx)
-		idx -= 1; // size in [16] => idx 0
+		idx--; // size in [16] => idx 0
 	return clamp_index(idx);
 }
 

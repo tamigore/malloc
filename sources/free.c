@@ -6,7 +6,7 @@
 /*   By: tamigore <tamigore@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/17 11:21:03 by tamigore          #+#    #+#             */
-/*   Updated: 2025/09/27 15:41:29 by tamigore         ###   ########.fr       */
+/*   Updated: 2025/09/28 15:06:22 by tamigore         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -119,7 +119,7 @@ void free(void *ptr)
 		return;
 	}
 	t_block *b = ptr_to_block(ptr);
-	t_zone *owner = b->zone; // back-pointer (may be NULL if corruption)
+	t_zone *owner = b->zone; // back-pointer
 	if (!owner || !block_in_zone(owner, b))
 	{
 		// Fallback: attempt to locate via linear scan only if zone pointer missing
@@ -142,7 +142,7 @@ void free(void *ptr)
 	{
 		malloc_unlock();
 		return;
-	} // double free guard (silent)
+	} // double free guard
 	b->free = 1;
 	if (owner->used >= b->size)
 		owner->used -= b->size;
